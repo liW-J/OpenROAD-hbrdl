@@ -153,6 +153,18 @@ set_use_cugr(bool use_cugr)
 }
 
 void
+set_use_true_3d(bool use_true_3d)
+{
+  getGlobalRouter()->setUseTrue3D(use_true_3d);
+}
+
+void
+set_true_3d_cut_layer(const char* cut_layer)
+{
+  getGlobalRouter()->setTrue3DCutLayer(cut_layer);
+}
+
+void
 set_skip_large_fanout(int skip_large_fanout)
 {
   getGlobalRouter()->setSkipLargeFanoutNets(skip_large_fanout);

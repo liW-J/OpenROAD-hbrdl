@@ -14,6 +14,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <queue>
 #include <random>
 #include <set>
@@ -34,6 +35,7 @@
 #include "Pin.h"
 #include "RepairAntennas.h"
 #include "RoutingTracks.h"
+#include "True3DRouter.h"
 #include "boost/icl/interval.hpp"
 #include "boost/polygon/polygon.hpp"
 #include "db_sta/dbNetwork.hh"
@@ -131,6 +133,8 @@ void GlobalRouter::clear()
   fastroute_->clear();
   vertical_capacities_.clear();
   horizontal_capacities_.clear();
+  last_route_used_true_3d_ = false;
+  true_3d_overflow_ = 0;
   initialized_ = false;
 }
 
@@ -202,6 +206,17 @@ void GlobalRouter::applyAdjustments(int min_routing_layer,
 // previous congestion report file.
 void GlobalRouter::saveCongestion()
 {
+  if (last_route_used_true_3d_) {
+    fastroute_->computeCongestionInformation();
+    const std::vector<int>& overflow
+        = fastroute_->getTotalOverflowPerLayer();
+    true_3d_overflow_
+        = std::accumulate(overflow.begin(), overflow.end(), 0);
+    // Overflow is report-only in the congestion-unaware first implementation.
+    is_congested_ = false;
+    fastroute_->saveCongestion();
+    return;
+  }
   is_congested_ = fastroute_->totalOverflow() > 0;
   fastroute_->saveCongestion();
 }
@@ -322,6 +337,12 @@ bool GlobalRouter::haveDetailedRoutes(const std::vector<odb::dbNet*>& db_nets)
 
 void GlobalRouter::startIncremental()
 {
+  if (last_route_used_true_3d_) {
+    logger_->error(GRT,
+                   328,
+                   "Incremental global routing is not supported after the "
+                   "basic true-3D backend.");
+  }
   is_incremental_ = true;
   if (!initialized_ || haveDetailedRoutes()) {
     int min_layer, max_layer;
@@ -346,6 +367,15 @@ void GlobalRouter::endIncremental(bool save_guides)
 void GlobalRouter::globalRoute(bool save_guides)
 {
   auto start = std::chrono::steady_clock::now();
+  if (use_true_3d_ && use_cugr_) {
+    logger_->error(GRT, 329, "True-3D routing and CUGR are mutually exclusive.");
+  }
+  if (use_true_3d_ && true_3d_cut_layer_.empty()) {
+    logger_->error(GRT,
+                   330,
+                   "The basic true-3D backend requires an interface cut "
+                   "layer.");
+  }
   bool has_routable_nets = false;
 
   for (auto net : db_->getChip()->getBlock()->getNets()) {
@@ -364,13 +394,30 @@ void GlobalRouter::globalRoute(bool save_guides)
 
   try {
     clear();
+    last_route_used_true_3d_ = use_true_3d_;
     block_ = db_->getChip()->getBlock();
 
     int min_layer, max_layer;
     getMinMaxLayer(min_layer, max_layer);
 
     std::vector<Net*> nets = initFastRoute(min_layer, max_layer);
-    if (use_cugr_) {
+    if (use_true_3d_) {
+      if (verbose_) {
+        reportResources();
+      }
+      True3DRouter true_3d_router(db_, grid_, logger_);
+      routes_ = true_3d_router.route(
+          nets, min_layer, max_layer, true_3d_cut_layer_);
+      addRemainingGuides(routes_, nets, min_layer, max_layer);
+      connectPadPins(routes_);
+      for (auto& [db_net, route] : routes_) {
+        mergeSegments(db_net_map_[db_net]->getPins(), route);
+        for (GSegment& segment : route) {
+          segment.setIs3DRoute(true);
+        }
+      }
+      recordTrue3DRouteUsage(min_layer, max_layer);
+    } else if (use_cugr_) {
       std::set<odb::dbNet*> clock_nets;
       findClockNets(nets, clock_nets);
       cugr_->init(min_layer, max_layer, clock_nets);
@@ -409,6 +456,13 @@ void GlobalRouter::finishGlobalRouting(bool save_guides)
   updateDbCongestion();
   saveCongestion();
 
+  if (last_route_used_true_3d_ && true_3d_overflow_ > 0) {
+    logger_->warn(GRT,
+                  331,
+                  "Basic true-3D routing has {} overflow. Overflow is "
+                  "reported but is not used to reject or reroute this result.",
+                  true_3d_overflow_);
+  }
   if (verbose_ && !use_cugr_) {
     reportCongestion();
   }
@@ -5472,6 +5526,29 @@ void GlobalRouter::reportLayerSettings(int min_routing_layer,
     logger_->info(GRT, 22, "Global adjustment: {}%", int(adjustment_ * 100));
     logger_->info(
         GRT, 23, "Grid origin: ({}, {})", grid_origin_.x(), grid_origin_.y());
+  }
+}
+
+void GlobalRouter::recordTrue3DRouteUsage(const int min_routing_layer,
+                                          const int max_routing_layer)
+{
+  for (const auto& [db_net, route] : routes_) {
+    for (const GSegment& segment : route) {
+      if (segment.isVia()) {
+        continue;
+      }
+      const int layer = segment.init_layer;
+      if (layer < min_routing_layer || layer > max_routing_layer) {
+        continue;
+      }
+      updateResources(segment.init_x,
+                      segment.init_y,
+                      segment.final_x,
+                      segment.final_y,
+                      layer,
+                      1,
+                      db_net);
+    }
   }
 }
 

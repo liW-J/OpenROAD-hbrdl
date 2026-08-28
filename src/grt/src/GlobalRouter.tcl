@@ -153,6 +153,8 @@ sta::define_cmd_args "global_route" {[-guide_file out_file] \
                                   [-start_incremental] \
                                   [-end_incremental] \
                                   [-use_cugr] \
+                                  [-use_true_3d] \
+                                  [-true_3d_cut_layer cut_layer] \
                                   [-resistance_aware] \
                                   [-infinite_cap]
 }
@@ -162,10 +164,10 @@ proc global_route { args } {
     keys {-guide_file -congestion_iterations -congestion_report_file \
           -grid_origin -gcell_size -critical_nets_percentage \
           -congestion_report_iter_step \
-          -skip_large_fanout_nets
+          -skip_large_fanout_nets -true_3d_cut_layer
          } \
     flags {-allow_congestion -resistance_aware -infinite_cap -verbose -start_incremental \
-          -end_incremental -use_cugr}
+          -end_incremental -use_cugr -use_true_3d}
 
   sta::check_argc_eq0 "global_route" $args
 
@@ -177,7 +179,23 @@ proc global_route { args } {
     utl::error GRT 52 "Missing dbBlock."
   }
 
-  grt::set_use_cugr [info exists flags(-use_cugr)]
+  set use_cugr [info exists flags(-use_cugr)]
+  set use_true_3d [info exists flags(-use_true_3d)]
+  if { $use_cugr && $use_true_3d } {
+    utl::error GRT 332 "Only one of -use_cugr or -use_true_3d can be used."
+  }
+  if { $use_true_3d } {
+    if { ![info exists keys(-true_3d_cut_layer)] } {
+      utl::error GRT 333 "-use_true_3d requires -true_3d_cut_layer."
+    }
+    grt::set_true_3d_cut_layer $keys(-true_3d_cut_layer)
+  } elseif { [info exists keys(-true_3d_cut_layer)] } {
+    utl::error GRT 334 "-true_3d_cut_layer requires -use_true_3d."
+  } else {
+    grt::set_true_3d_cut_layer ""
+  }
+  grt::set_use_cugr $use_cugr
+  grt::set_use_true_3d $use_true_3d
 
   grt::set_verbose [info exists flags(-verbose)]
 
@@ -241,6 +259,9 @@ proc global_route { args } {
   grt::set_allow_congestion $allow_congestion
 
   set resistance_aware [info exists flags(-resistance_aware)]
+  if { $use_true_3d && $resistance_aware } {
+    utl::error GRT 335 "-resistance_aware is not supported by -use_true_3d."
+  }
   grt::set_resistance_aware $resistance_aware
 
   set infinite_cap [info exists flags(-infinite_cap)]
@@ -249,6 +270,9 @@ proc global_route { args } {
   set start_incremental [info exists flags(-start_incremental)]
   set end_incremental [info exists flags(-end_incremental)]
 
+  if { $use_true_3d && ($start_incremental || $end_incremental) } {
+    utl::error GRT 336 "Incremental routing is not supported by -use_true_3d."
+  }
   if { $start_incremental && $end_incremental } {
     utl::error GRT 295 "Only one of -start_incremental or -end_incremental can be used."
   } elseif { $start_incremental } {

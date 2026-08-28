@@ -158,6 +158,11 @@ class GlobalRouter
   void setResistanceAware(bool resistance_aware);
   void setMacroExtension(int macro_extension);
   void setUseCUGR(bool use_cugr) { use_cugr_ = use_cugr; };
+  void setUseTrue3D(bool use_true_3d) { use_true_3d_ = use_true_3d; }
+  void setTrue3DCutLayer(const char* cut_layer)
+  {
+    true_3d_cut_layer_ = cut_layer;
+  }
   void setSkipLargeFanoutNets(int skip_large_fanout)
   {
     skip_large_fanout_ = skip_large_fanout;
@@ -436,6 +441,7 @@ class GlobalRouter
   void print(GRoute& route);
   void printSegment(const GSegment& segment);
   void reportLayerSettings(int min_routing_layer, int max_routing_layer);
+  void recordTrue3DRouteUsage(int min_routing_layer, int max_routing_layer);
   void reportResources();
   void reportCongestion();
   void updateEdgesUsage();
@@ -539,6 +545,10 @@ class GlobalRouter
   int total_diodes_count_;
   bool is_congested_{false};
   bool use_cugr_{false};
+  bool use_true_3d_{false};
+  bool last_route_used_true_3d_{false};
+  std::string true_3d_cut_layer_;
+  int true_3d_overflow_{0};
   int skip_large_fanout_{std::numeric_limits<int>::max()};
   bool has_macros_or_pads_{false};
   bool check_pin_placement_{true};

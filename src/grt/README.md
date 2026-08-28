@@ -30,6 +30,8 @@ global_route
     [-start_incremental]
     [-end_incremental]
     [-use_cugr]
+    [-use_true_3d]
+    [-true_3d_cut_layer cut_layer]
     [-resistance_aware]
     [-infinite_cap]
 ```
@@ -50,6 +52,8 @@ global_route
 | `-start_incremental` | This flag initializes the GRT listener to get the net modified. The default is false. |
 | `-end_incremental` | This flag run incremental GRT with the nets modified. The default is false. |
 | `-use_cugr` | This flag run GRT using CUGR as the router solver. NOTE: this is not ready for production. |
+| `-use_true_3d` | Use the experimental basic true-3D router. It builds independent die-local rectilinear trees and connects each cross-die net with one HBT. This first implementation is congestion-unaware and does not support incremental routing. |
+| `-true_3d_cut_layer` | Set the CUT layer that separates the two routing stacks for `-use_true_3d`. The cut layer must have adjacent routing levels above and below it. |
 | `-resistance_aware` | This flag enables resistance-aware layer assignment and 3D routing. NOTE: this is not ready for production. |
 | `-infinite_cap` | Enables "infinite" gcell capacity for testing purpose. NOTE: this is not recommended for production flows. |
 

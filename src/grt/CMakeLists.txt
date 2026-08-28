@@ -22,6 +22,7 @@ add_library(grt_lib
   src/Pin.cpp
   src/RepairAntennas.cpp
   src/Rudy.cpp
+  src/True3DRouter.cpp
   src/GlobalRouter.cpp
 )
 
